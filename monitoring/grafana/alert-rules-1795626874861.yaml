@@ -1,0 +1,111 @@
+apiVersion: 1
+groups:
+    - orgId: 1
+      name: soa-monitoring
+      folder: SOA Lab 6 Alerts
+      interval: 1m
+      rules:
+        - uid: eg5dq9656mlfkb
+          title: SOA - Service Down
+          condition: C
+          data:
+            - refId: A
+              relativeTimeRange:
+                from: 600
+                to: 0
+              datasourceUid: fg5dlkiwinim8e
+              model:
+                editorMode: code
+                expr: up{job="microservices"}
+                instant: true
+                intervalMs: 1000
+                legendFormat: __auto
+                maxDataPoints: 43200
+                range: false
+                refId: A
+            - refId: C
+              datasourceUid: __expr__
+              model:
+                conditions:
+                    - evaluator:
+                        params:
+                            - 1
+                        type: lt
+                      operator:
+                        type: and
+                      query:
+                        params:
+                            - C
+                      reducer:
+                        params: []
+                        type: last
+                      type: query
+                datasource:
+                    type: __expr__
+                    uid: __expr__
+                expression: A
+                intervalMs: 1000
+                maxDataPoints: 43200
+                refId: C
+                type: threshold
+          noDataState: NoData
+          execErrState: Error
+          for: 1m
+          labels:
+            severity: critical
+            system: soa_lab6
+          isPaused: false
+          notification_settings:
+            receiver: SOA Lab 6 - n8n Webhook
+        - uid: eg5dqu12jqjggb
+          title: SOA - High Latency p99
+          condition: C
+          data:
+            - refId: A
+              relativeTimeRange:
+                from: 600
+                to: 0
+              datasourceUid: fg5dlkiwinim8e
+              model:
+                editorMode: code
+                expr: histogram_quantile(0.99, sum by (le, instance) (rate(http_request_duration_seconds_bucket{job="microservices"}[5m])))
+                instant: true
+                intervalMs: 1000
+                legendFormat: __auto
+                maxDataPoints: 43200
+                range: false
+                refId: A
+            - refId: C
+              datasourceUid: __expr__
+              model:
+                conditions:
+                    - evaluator:
+                        params:
+                            - 0.5
+                        type: gt
+                      operator:
+                        type: and
+                      query:
+                        params:
+                            - C
+                      reducer:
+                        params: []
+                        type: last
+                      type: query
+                datasource:
+                    type: __expr__
+                    uid: __expr__
+                expression: A
+                intervalMs: 1000
+                maxDataPoints: 43200
+                refId: C
+                type: threshold
+          noDataState: NoData
+          execErrState: Error
+          for: 1m
+          labels:
+            severity: warning
+            system: soa_lab6
+          isPaused: false
+          notification_settings:
+            receiver: SOA Lab 6 - n8n Webhook

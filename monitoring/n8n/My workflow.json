@@ -1,0 +1,214 @@
+{
+  "name": "My workflow",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "soa-incident",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        0,
+        0
+      ],
+      "id": "cad8a7f9-1462-4290-867e-124043cce9c6",
+      "name": "Webhook",
+      "webhookId": "d597c0af-6a01-44c0-bfce-bc2d649b8583"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "d3ac8962-30dc-4674-bb51-9f74b6c003f0",
+              "name": "incident_id",
+              "value": "={{ 'INC-' + $now.toFormat('yyyyMMddHHmmss') }}",
+              "type": "string"
+            },
+            {
+              "id": "3707179d-c304-4f78-8cdf-8beda0fd42a1",
+              "name": "source",
+              "value": "Grafana",
+              "type": "string"
+            },
+            {
+              "id": "922d4a6e-a1da-49b0-9aae-328e31c79c4d",
+              "name": "status",
+              "value": "open",
+              "type": "string"
+            },
+            {
+              "id": "5edd3718-4f9b-42a7-bad9-e2e8f0562e47",
+              "name": "alert_status",
+              "value": "={{ $json.body.status }}",
+              "type": "string"
+            },
+            {
+              "id": "15b35580-76ad-4cf7-a72e-71e0fbce5d4d",
+              "name": "alert_name",
+              "value": "={{ $json.body.commonLabels.alertname }}",
+              "type": "string"
+            },
+            {
+              "id": "ebd517f2-d1d4-4ff9-ba5b-4707ea4f628e",
+              "name": "severity",
+              "value": "={{ $json.body.commonLabels.severity }}",
+              "type": "string"
+            },
+            {
+              "id": "9da7be07-8e2e-4fda-9b80-478a62496d91",
+              "name": "=created_at",
+              "value": "={{ $now.toISO() }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        208,
+        0
+      ],
+      "id": "ea56337f-3509-4dcb-ae97-75527580bf31",
+      "name": "Edit Fields"
+    },
+    {
+      "parameters": {
+        "dataTableId": {
+          "__rl": true,
+          "value": "C9q4HBHxn3fOyhxb",
+          "mode": "list",
+          "cachedResultName": "soa_incidents",
+          "cachedResultUrl": "/projects/tual1Z6BvigJEP1A/datatables/C9q4HBHxn3fOyhxb"
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "value": {},
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "incident_id",
+              "displayName": "incident_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "source",
+              "displayName": "source",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "status",
+              "displayName": "status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "alert_status",
+              "displayName": "alert_status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "alert_name",
+              "displayName": "alert_name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "severity",
+              "displayName": "severity",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "created_at",
+              "displayName": "created_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1,
+      "position": [
+        416,
+        0
+      ],
+      "id": "e7a39fdc-1bc0-4046-a335-d1464fe21471",
+      "name": "Insert row"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Edit Fields",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Edit Fields": {
+      "main": [
+        [
+          {
+            "node": "Insert row",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "c2bb7f9f-c959-482d-ace2-ab29246f9706",
+  "meta": {
+    "instanceId": "b3d8e3c70f45bbf3cf7796fb8b75d022a0f82b8d6a272b9b14b67933b7292373"
+  },
+  "id": "rYKoVYLn994Ra6tb",
+  "tags": []
+}
