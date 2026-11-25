@@ -1,3 +1,5 @@
+from observability import setup_observability
+from metrics import setup_metrics
 import os
 import secrets
 import hashlib
@@ -9,6 +11,10 @@ from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import RedirectResponse, HTMLResponse
 
 app = FastAPI(title="OAuth Service")
+
+setup_observability(app, "oauth")
+
+setup_metrics(app)
 
 CLIENT_ID = "homework-client"
 REALM = "homework-realm"

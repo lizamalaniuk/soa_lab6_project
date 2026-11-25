@@ -1,3 +1,5 @@
+from observability import setup_observability
+from metrics import setup_metrics
 from fastapi import FastAPI, HTTPException
 from fastapi import Depends
 from auth import require_scope
@@ -7,6 +9,10 @@ from common import db, INSTANCE
 import uuid
 
 app = FastAPI(title="User Service")
+
+setup_observability(app, "users")
+
+setup_metrics(app)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["https://cad.kpi.ua"],

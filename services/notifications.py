@@ -1,9 +1,15 @@
+from observability import setup_observability
+from metrics import setup_metrics
 from fastapi import FastAPI
 from common import db, INSTANCE
 from fastapi.middleware.cors import CORSMiddleware
 import json
 
 app=FastAPI(title='Notification Service')
+
+setup_observability(app, "notifications")
+
+setup_metrics(app)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["https://cad.kpi.ua"],

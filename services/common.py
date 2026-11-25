@@ -16,7 +16,24 @@ def db():
     )
 
 
-def publish(event_type, payload):
+
+def declare_dead_letter(channel):
+    channel.exchange_declare(
+        exchange="homework.dlx",
+        exchange_type="direct",
+        durable=True
+    )
+    channel.queue_declare(
+        queue="homework.dlq",
+        durable=True
+    )
+    channel.queue_bind(
+        queue="homework.dlq",
+        exchange="homework.dlx",
+        routing_key="failed"
+    )
+
+def publish(event_type, payload, trace_id=None):
     params = pika.ConnectionParameters(
         host="rabbitmq",
         heartbeat=30,
@@ -35,6 +52,8 @@ def publish(event_type, payload):
                 exchange_type="fanout",
                 durable=True
             )
+
+            declare_dead_letter(channel)
 
             channel.queue_declare(
                 queue="notification.events",
@@ -61,7 +80,10 @@ def publish(event_type, payload):
                     "data": payload
                 }),
                 properties=pika.BasicProperties(
-                    delivery_mode=2
+                    delivery_mode=2,
+                    headers={
+                        "trace_id": trace_id or ""
+                    }
                 ),
                 mandatory=True
             )

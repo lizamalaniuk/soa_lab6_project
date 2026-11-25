@@ -1,185 +1,154 @@
-# Лабораторна робота №5 — Безпека сервісних API
+# SOA Lab 6 — Observability та автоматизоване реагування на інциденти
 
-**Дисципліна:** Інформаційні системи на основі сервісів (ІСОС)  
-**Тема:** Автентифікація, авторизація та обмеження доступу в мікросервісній системі  
-**Проєкт:** Система керування домашніми завданнями (`soa_lab5_project`)
+Навчальний проєкт із сервіс-орієнтованої архітектури (SOA). У лабораторній роботі №6 до системи мікросервісів додано збір метрик, централізовані журнали, кореляцію запитів, правила сповіщень та автоматичну реєстрацію інцидентів.
 
-## Мета
-
-Розширити створену в попередніх лабораторних роботах мікросервісну систему механізмами безпеки: налаштувати CORS через API Gateway, реалізувати OAuth 2.0 Authorization Code Flow з PKCE за допомогою Keycloak, перевірку JWT, розмежування доступу за OAuth Scopes та вхід через зовнішнього провайдера Google.
-
-## Архітектура
-
-Система складається з кількох компонентів:
+## Компоненти системи
 
 | Компонент | Призначення |
 |---|---|
-| **Nginx API Gateway** | Єдина точка входу; маршрутизація запитів до мікросервісів |
-| **User Service (FastAPI)** | Операції з користувачами; захист створення користувача |
-| **Homework Service (FastAPI)** | Операції з домашніми завданнями; перевірка JWT та дозволів |
-| **Notification Service (FastAPI)** | Отримання сповіщень |
-| **OAuth Service (FastAPI)** | Вхід через Keycloak, обмін authorization code на токени, серверна сесія |
-| **Keycloak** | Сервер автентифікації, OAuth 2.0 / OpenID Connect, випуск JWT, брокеризація входу через Google |
-| **Redis** | Дані застосунку та короткоживучі OAuth-сесії |
-| **RabbitMQ** | Асинхронний обмін повідомленнями |
-| **Consumer / Outbox Publisher** | Обробка подій і публікація записів Transactional Outbox |
-| **Saga Coordinator / Saga Timeout** | Координація і контроль часу тривалих процесів |
-| **A2A Producer** | Компонент агентної взаємодії, доданий у попередній лабораторній |
+| Nginx Gateway | Єдина точка входу до HTTP API |
+| Users, Homework, Notifications, OAuth | Мікросервіси FastAPI |
+| Redis | Зберігання даних і подій Outbox |
+| RabbitMQ | Асинхронний обмін повідомленнями |
+| Outbox Publisher, Consumer | Публікація та обробка подій |
+| Saga Coordinator, Saga Timeout | Координація компенсацій та обробка тайм-аутів |
+| Keycloak | Автентифікація та авторизація |
+| A2A Producer | Додатковий агентний компонент системи |
+| Prometheus | Збір і зберігання метрик |
+| Grafana | Візуалізація метрик і правила сповіщень |
+| Loki + Grafana Alloy | Централізований збір журналів Docker-контейнерів |
+| n8n | Обробка вебхуків і реєстрація інцидентів |
 
-У репозиторії також зберігаються каталоги `a2a_agents`, `ai_agent` і `mcp_server` з напрацюваннями попередніх лабораторних робіт.
+## Вимоги
 
-### Схема авторизації
-
-```text
-Браузер → Nginx (/oauth/login) → OAuth Service
-                              ↓
-                        Keycloak (OAuth 2.0 / OIDC)
-                              ↔ Google (зовнішній Identity Provider)
-                              ↓
-                   Authorization Code + PKCE
-                              ↓
-                       OAuth Service → Redis (сесія)
-                              ↓
-                    JWT → User / Homework Service
-                              ↓
-                 Перевірка підпису, issuer, audience,
-                         строку дії та scopes
-```
-
-## Реалізовані механізми безпеки
-
-### 1. CORS
-
-У трьох FastAPI-сервісах налаштовано `CORSMiddleware` з дозволеним джерелом `https://cad.kpi.ua`. Перевірено preflight-запити `OPTIONS` через Nginx: для User, Homework та Notification Service отримано `HTTP 200` і заголовок `Access-Control-Allow-Origin: https://cad.kpi.ua`.
-
-### 2. OAuth 2.0 Authorization Code Flow + PKCE
-
-У Keycloak створено realm `homework-realm` і клієнт `homework-client`. Використовується **Standard Flow** із **PKCE S256**. OAuth Service створює параметри `state` і `code_verifier`, перенаправляє користувача до Keycloak та обмінює одноразовий код на токени. Access token зберігається в короткоживучій серверній сесії Redis; браузер отримує лише `HttpOnly` session cookie.
-
-### 3. Захист JWT
-
-Спільний модуль `services/auth.py` перевіряє JWT за публічними ключами Keycloak (JWKS), підписом, строком дії, `issuer` та `audience=homework-api`.
-
-- Без токена захищений API повертає **401 Unauthorized**.
-- Із дійсним JWT, але без потрібного дозволу, — **403 Forbidden**.
-- Із дійсним JWT та потрібним дозволом — успішну відповідь.
-
-### 4. OAuth Scopes
-
-Для клієнта налаштовано *optional* scopes:
-
-| Scope | Призначення | Приклад захищеної операції |
-|---|---|---|
-| `homework:read` | Читання домашніх завдань | `GET /api/homeworks` |
-| `users:write` | Створення користувачів | `POST /api/users` |
-
-OAuth Service підтримує параметр `scope_type`: `basic`, `homework`, `users`. Права перевіряються за полем `scope` у JWT, а не лише за наявністю авторизованого користувача.
-
-### 5. Google Identity Provider
-
-До Keycloak у realm `homework-realm` додано Google як зовнішнього провайдера. Google OAuth-клієнт створюється окремо в Google Auth Platform, а його Redirect URI має вигляд:
-
-```text
-http://localhost:8081/realms/homework-realm/broker/google/endpoint
-```
-
-Google OAuth Client ID і Client Secret вводяться **в адміністративній панелі Keycloak**; їх **не потрібно записувати в README, комітити до Git або надсилати іншим особам**. Для тестового режиму Google застосунок дозволяє вхід обліковим записам зі списку Test users.
-
-## Структура проєкту
-
-```text
-soa_lab5_project/
-├── a2a_agents/
-├── ai_agent/
-├── mcp_server/
-├── nginx/
-│   └── default.conf
-├── services/
-│   ├── auth.py
-│   ├── oauth.py
-│   ├── users.py
-│   ├── homework.py
-│   ├── notifications.py
-│   ├── consumer.py
-│   └── ...
-├── docker-compose.yml
-├── Dockerfile.a2a
-├── .gitignore
-└── README.md
-```
+- Docker Desktop з підтримкою Docker Compose.
+- Git (для отримання та публікації коду).
+- Доступні локальні порти, які використовує проєкт (див. таблицю нижче).
 
 ## Запуск
 
-**Передумови:** Docker Desktop із Docker Compose, вільні локальні порти `8080`, `8081`, `9001`, `15672`.
-
-У корені проєкту:
+Із кореневої папки проєкту:
 
 ```bash
-docker compose config --quiet
-docker compose up -d --build
-docker compose ps
+docker compose -f docker-compose.yml -f docker-compose.monitoring.yml config --quiet
+docker compose -f docker-compose.yml -f docker-compose.monitoring.yml up -d --build
 ```
 
-Основні локальні адреси:
+Перевірка запущених контейнерів:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.monitoring.yml ps
+```
+
+Перегляд журналів певного компонента:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.monitoring.yml logs --tail=100 rabbitmq
+```
+
+Зупинка середовища:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.monitoring.yml down
+```
+
+## Локальні адреси
 
 | Сервіс | Адреса |
 |---|---|
-| API Gateway | `http://localhost:8080` |
-| Keycloak Admin Console | `http://localhost:8081/admin/` |
-| Початок OAuth-входу | `http://localhost:8080/oauth/login` |
-| Перевірка OAuth-сесії | `http://localhost:8080/oauth/status` |
-| RabbitMQ Management | `http://localhost:15672` |
+| API Gateway | http://localhost:8080 |
+| Keycloak | http://localhost:8081 |
+| A2A Producer | http://localhost:9001 |
+| RabbitMQ Management | http://localhost:15672 |
+| Prometheus | http://localhost:9090 |
+| Prometheus Targets | http://localhost:9090/targets |
+| Grafana | http://localhost:3000 |
+| Loki | http://localhost:3100 |
+| n8n | http://localhost:5678 |
 
-У **першому** запуску потрібно вручну створити Keycloak realm `homework-realm`, клієнт `homework-client` (Standard Flow, PKCE S256), audience mapper `homework-api`, optional client scopes `homework:read` і `users:write`. Для Google входу додатково налаштувати Google OAuth Client і Google Identity Provider у Keycloak. Дані Keycloak зберігаються в Docker volume `keycloak_data`, тому після звичайного перезапуску повторювати налаштування не потрібно.
+Параметри входу в інтерфейси визначаються конфігураціями відповідних сервісів. Паролі й токени не слід публікувати в репозиторії; для використання поза локальним навчальним середовищем замініть тестові облікові дані та налаштуйте захищений доступ.
 
-### Перевірка OAuth
+## Що реалізовано у лабораторній №6
 
-У браузері відкрий:
+### Метрики Prometheus
 
-- `http://localhost:8080/oauth/login?scope_type=basic` — вхід без додаткових scopes.
-- `http://localhost:8080/oauth/login?scope_type=homework` — запит `homework:read`.
-- `http://localhost:8080/oauth/login?scope_type=users` — запит `users:write`.
-- `http://localhost:8080/oauth/status` — перевірка поточної серверної сесії.
+Для чотирьох FastAPI-сервісів (`users`, `homework`, `notifications`, `oauth`) налаштовано HTTP-метрики. У Prometheus також відстежуються сам Prometheus, RabbitMQ і Saga Coordinator. У перевіреному середовищі всі **7 цілей** мали статус `UP`.
 
-> Маршрути `/oauth/debug-scopes`, `/oauth/test-jwt` та `/oauth/test-homework-jwt` використовувалися лише під час розроблення і видалені з фінальної конфігурації.
+У Grafana створено дашборд **SOA Lab 6 — Observability Dashboard** з панелями:
 
-### Перевірка CORS
+- доступність мікросервісів;
+- інтенсивність HTTP-запитів та відсоток помилок;
+- затримки HTTP (p50, p95, p99);
+- кількість повідомлень у чергах RabbitMQ та доступність брокера;
+- метрики обробки повідомлень Saga Coordinator.
 
-```bash
-curl -i -X OPTIONS http://localhost:8080/api/users \
-  -H 'Origin: https://cad.kpi.ua' \
-  -H 'Access-Control-Request-Method: POST' \
-  -H 'Access-Control-Request-Headers: Content-Type'
+### Журнали та Trace ID
+
+Сервіси формують структуровані журнали, які збирає Alloy та передає до Loki. Для HTTP-запитів використовується заголовок `X-Trace-ID`. Ідентифікатор також передається між компонентами асинхронного маршруту через RabbitMQ, що допомагає зіставляти записи різних сервісів.
+
+Це **кореляція за Trace ID**, а не повноцінний розподілений трейсинг зі span-ами через OpenTelemetry.
+
+Приклад фільтра в Grafana Explore (Loki):
+
+```logql
+{service="users"} |= "lab6-loki-test-456"
 ```
 
-Очікується статус `200 OK` та заголовок `access-control-allow-origin: https://cad.kpi.ua`.
+### Сповіщення та n8n
 
-### Перевірка доступу без JWT
+У Grafana налаштовано правила **SOA - Service Down** та **SOA - High Latency p99**. Сповіщення надходять у n8n через webhook `/webhook/soa-incident`, після чого інформація про інцидент записується до Data Table `soa_incidents`.
+
+Під час перевірки зупинка `notifications` спричинила спрацьовування сповіщення й появу нового запису про інцидент у n8n.
+
+### Saga та RabbitMQ
+
+Saga Coordinator обробляє повідомлення з `homework.dlq` і реалізує компенсаційний сценарій. Відповідні метрики експортуються з компонента до Prometheus. Для RabbitMQ постійно увімкнені плагіни `rabbitmq_management` і `rabbitmq_prometheus` через файл `rabbitmq/enabled_plugins`.
+
+Перевірка черг:
 
 ```bash
-curl -i http://localhost:8080/api/homeworks
+docker compose exec rabbitmq rabbitmqctl list_queues name messages consumers
 ```
 
-Очікується `401 Unauthorized`.
+Перевірка активних плагінів:
 
-## Результати проведених перевірок
+```bash
+docker compose exec rabbitmq rabbitmq-plugins list -e
+```
 
-| Сценарій | Фактичний результат |
-|---|---|
-| CORS preflight через Nginx до трьох сервісів | `200 OK`, правильний `Access-Control-Allow-Origin` |
-| OAuth 2.0 Authorization Code Flow з PKCE | Успішний вхід; `authenticated: true`, `token_present: true` |
-| User Service без токена | `401 Unauthorized` |
-| User Service з JWT і `users:write` | `201 Created` |
-| Homework Service без токена | `401 Unauthorized` |
-| Homework Service з JWT без `homework:read` | `403 Forbidden` |
-| Homework Service з JWT і `homework:read` | `200 OK` |
-| Вхід через Google → Keycloak → OAuth Service | Успішна авторизація та доступ до Homework Service (`200 OK`) |
-| Видалений діагностичний маршрут `/oauth/debug-scopes` | `404 Not Found` |
+## Структура важливих файлів
 
-## Зауваження щодо безпеки
+```text
+soa_lab6_project/
+├── docker-compose.yml
+├── docker-compose.monitoring.yml
+├── rabbitmq/
+│   └── enabled_plugins
+├── monitoring/
+│   ├── config.alloy
+│   ├── loki.yml
+│   └── prometheus.yml
+└── services/
+    ├── observability.py
+    ├── metrics.py
+    ├── coordinator_metrics.py
+    ├── common.py
+    ├── consumer.py
+    ├── outbox_publisher.py
+    ├── saga_coordinator.py
+    └── ...
+```
 
-Проєкт використовується **лише локально для навчання**. У режимі розробки використано HTTP і Keycloak `start-dev`; це не конфігурація для публічного розгортання. Для реального середовища потрібні HTTPS, захищені cookies (`Secure`), надійні паролі, керування секретами та додаткове посилення контролю доступу. Не публікуйте Google Client Secret, токени, вміст Redis або облікові дані адміністратора. Якщо секрет було розкрито, його необхідно відкликати та випустити новий.
+## Перенесення конфігурації Grafana та n8n
 
-## Висновок
+Дашборди й правила Grafana, а також workflow та Data Table n8n, створені через вебінтерфейс, **не обов'язково містяться у вихідному коді**. Перед перенесенням лабораторної на інший комп'ютер потрібно окремо експортувати або налаштувати їхнє автоматичне створення. Запуск контейнерів сам по собі не гарантує відновлення всіх цих об'єктів.
 
-У лабораторній роботі реалізовано та перевірено базові механізми захисту сервісних API: CORS, OAuth 2.0 Authorization Code Flow із PKCE, JWT, розмежування доступу за scopes та федеративний вхід через Google. Результати HTTP-перевірок підтвердили різницю між відсутністю автентифікації (`401`), відсутністю потрібних прав (`403`) та дозволеним доступом (`200` / `201`).
+## Обмеження
+
+- Реплікація, шардинг та метрики `replication lag` не заявляються як реалізовані без окремого розгортання й тестування відповідних механізмів.
+- Налаштування та облікові дані навчального середовища не призначені для публічного продакшн-розгортання.
+- Фактичний стан системи перевіряйте за Docker Compose, Prometheus Targets і журналами контейнерів.
+
+## Результат
+
+У лабораторній роботі створено базову систему спостережуваності для SOA: метрики, журнали, ідентифікатори кореляції, моніторинг черг, виявлення проблем і автоматичну фіксацію інцидентів.

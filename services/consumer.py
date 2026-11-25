@@ -5,7 +5,8 @@ import time
 import pika
 import redis
 
-from common import db
+from common import db, declare_dead_letter
+from observability import logger, trace_id_var
 
 # Керуємо тестовою помилкою через змінну середовища.
 SIMULATE_FAILURE = os.getenv("SIMULATE_FAILURE", "false").lower() == "true"
@@ -91,6 +92,8 @@ def main():
                 durable=True
             )
 
+            declare_dead_letter(ch)
+
             ch.queue_declare(
                 queue="notification.events",
                 durable=True,
@@ -106,17 +109,52 @@ def main():
             )
 
             def callback(channel, method, properties, body):
+                headers = properties.headers or {}
+                trace_id = headers.get("trace_id") or "unknown"
+
+                token = trace_id_var.set(trace_id)
+                started = time.perf_counter()
+
                 try:
                     event = json.loads(body)
+
+                    logger.info(json.dumps({
+                        "event": "message_received",
+                        "service": "consumer",
+                        "trace_id": trace_id,
+                        "event_type": event.get("type"),
+                        "event_id": event.get("data", {}).get("event_id")
+                    }))
+
                     process_event(event)
                     channel.basic_ack(delivery_tag=method.delivery_tag)
 
+                    logger.info(json.dumps({
+                        "event": "message_processed",
+                        "service": "consumer",
+                        "trace_id": trace_id,
+                        "status": "success",
+                        "duration_ms": round(
+                            (time.perf_counter() - started) * 1000, 2
+                        )
+                    }))
+
                 except Exception as exc:
-                    print("CONSUMER FAILED:", str(exc), flush=True)
+                    logger.error(json.dumps({
+                        "event": "message_failed",
+                        "service": "consumer",
+                        "trace_id": trace_id,
+                        "status": "error",
+                        "error_type": type(exc).__name__
+                    }))
+
                     channel.basic_nack(
                         delivery_tag=method.delivery_tag,
                         requeue=False
                     )
+
+                finally:
+                    trace_id_var.reset(token)
 
             ch.basic_qos(prefetch_count=1)
             ch.basic_consume(

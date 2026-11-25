@@ -2,7 +2,8 @@
 import json
 import time
 import pika
-from common import db
+from common import db, declare_dead_letter
+from coordinator_metrics import SAGA_MESSAGES, SAGA_DURATION, start_metrics
 
 
 def compensate_homework(event):
@@ -62,6 +63,7 @@ def compensate_homework(event):
 
 
 def main():
+    start_metrics()
     while True:
         try:
             connection = pika.BlockingConnection(
@@ -72,19 +74,23 @@ def main():
             )
 
             channel = connection.channel()
+            declare_dead_letter(channel)
             channel.basic_qos(prefetch_count=1)
 
             def callback(ch, method, properties, body):
+                started = time.perf_counter()
                 try:
                     event = json.loads(body)
 
                     compensate_homework(event)
+                    SAGA_MESSAGES.labels(result='success').inc()
 
                     ch.basic_ack(
                         delivery_tag=method.delivery_tag
                     )
 
                 except Exception as exc:
+                    SAGA_MESSAGES.labels(result='error').inc()
                     print(
                         f"SAGA ERROR: {exc}",
                         flush=True
@@ -95,6 +101,9 @@ def main():
                         delivery_tag=method.delivery_tag,
                         requeue=True
                     )
+
+                finally:
+                    SAGA_DURATION.observe(time.perf_counter() - started)
 
             channel.basic_consume(
                 queue="homework.dlq",

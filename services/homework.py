@@ -1,3 +1,5 @@
+from observability import setup_observability, trace_id_var
+from metrics import setup_metrics
 from fastapi import FastAPI, HTTPException, Depends
 from pydantic import BaseModel
 from common import db, INSTANCE
@@ -9,6 +11,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from auth import verify_token, require_scope
 
 app = FastAPI(title="Homework Service")
+
+setup_observability(app, "homework")
+
+setup_metrics(app)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["https://cad.kpi.ua"],
@@ -35,6 +41,7 @@ def save_with_outbox(task, event_type):
 
     event = {
         "event_id": event_id,
+        "trace_id": trace_id_var.get() or uuid.uuid4().hex,
         "type": event_type,
         "data": task,
         "status": "pending",
@@ -74,6 +81,9 @@ def create_homework(
     try:
         response = requests.get(
             f"http://users:8000/users/{item.user_id}",
+            headers={
+                "X-Trace-ID": trace_id_var.get() or uuid.uuid4().hex
+            },
             timeout=4
         )
 

@@ -24,7 +24,8 @@ def process_outbox():
                 {
                     **event["data"],
                     "event_id": event["event_id"]
-                }
+                },
+                trace_id=event.get("trace_id")
             )
 
             event["status"] = "published"
