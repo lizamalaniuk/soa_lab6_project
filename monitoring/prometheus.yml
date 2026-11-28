@@ -24,3 +24,26 @@ scrape_configs:
     metrics_path: /metrics
     static_configs:
       - targets: ["saga_coordinator:9101"]
+
+  - job_name: "redis_cluster"
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["redis_exporter_shard1:9121"]
+        labels:
+          shard: "1"
+          role: "primary"
+
+      - targets: ["redis_exporter_replica1:9121"]
+        labels:
+          shard: "1"
+          role: "replica"
+
+      - targets: ["redis_exporter_shard2:9121"]
+        labels:
+          shard: "2"
+          role: "primary"
+
+      - targets: ["redis_exporter_replica2:9121"]
+        labels:
+          shard: "2"
+          role: "replica"

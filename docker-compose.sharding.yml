@@ -1,0 +1,58 @@
+services:
+  redis_shard1:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis_shard1_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      retries: 10
+
+  redis_replica1:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command:
+      - redis-server
+      - --replicaof
+      - redis_shard1
+      - "6379"
+    depends_on:
+      redis_shard1:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      retries: 10
+
+  redis_shard2:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis_shard2_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      retries: 10
+
+  redis_replica2:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command:
+      - redis-server
+      - --replicaof
+      - redis_shard2
+      - "6379"
+    depends_on:
+      redis_shard2:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      retries: 10
+
+volumes:
+  redis_shard1_data:
+  redis_shard2_data:
